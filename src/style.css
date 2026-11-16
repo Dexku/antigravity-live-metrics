@@ -1,0 +1,228 @@
+/* Antigravity Live Metrics — Native-blending Pill & Multi-language Tooltip */
+
+#antigravity\.agentSidePanelInputBox .agy-composer-footer > div:first-child {
+  min-width: 0 !important;
+}
+
+#antigravity\.agentSidePanelInputBox .agy-composer-footer > div:last-child {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 1;
+  margin-left: auto !important;
+}
+
+#ag-lm-pill {
+  position: relative;
+  display: none;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 22px;
+  margin-right: 8px;
+  padding: 0 2px;
+  border: none;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 450;
+  line-height: 1;
+  letter-spacing: normal;
+  color: rgba(0, 0, 0, 0.48);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  cursor: default;
+  transition: color 0.15s ease;
+}
+
+#ag-lm-pill:hover {
+  color: rgba(0, 0, 0, 0.84);
+}
+
+#ag-lm-pill #ag-lm-text {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  color: inherit;
+}
+
+#ag-lm-pill .ag-sep {
+  margin: 0 5px;
+  opacity: 0.4;
+}
+
+#ag-lm-pill .ag-ctx-warn {
+  color: #b45309;
+  font-weight: 600;
+}
+
+#ag-lm-pill .ag-ctx-crit {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* Dark mode pill */
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-pill {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-pill:hover {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-pill .ag-ctx-warn {
+  color: #fbbf24;
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-pill .ag-ctx-crit {
+  color: #f87171;
+}
+
+/* Hover Tooltip */
+#ag-lm-tooltip {
+  position: fixed;
+  z-index: 2147483647;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  padding: 12px 14px;
+  border-radius: 10px;
+  background-color: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.05);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #18181b;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+#ag-lm-tooltip[data-visible="1"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+#ag-lm-tooltip .ag-tt-sec + .ag-tt-sec {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+#ag-lm-tooltip .ag-tt-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #09090b;
+}
+
+#ag-lm-tooltip .ag-tt-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.055);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #52525b;
+}
+
+#ag-lm-tooltip .ag-tt-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#ag-lm-tooltip .ag-tt-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+#ag-lm-tooltip .ag-tt-lbl {
+  color: #71717a;
+  flex-shrink: 0;
+}
+
+#ag-lm-tooltip .ag-tt-val {
+  color: #18181b;
+  font-weight: 500;
+  text-align: right;
+}
+
+#ag-lm-tooltip .ag-tt-sub {
+  color: #71717a;
+  font-weight: 400;
+}
+
+#ag-lm-tooltip .ag-tt-bar-wrap {
+  margin-top: 6px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+}
+
+#ag-lm-tooltip .ag-tt-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #3b82f6;
+  transition: width 0.2s ease;
+}
+
+#ag-lm-tooltip .ag-tt-bar-fill.is-warn {
+  background: #d97706;
+}
+
+#ag-lm-tooltip .ag-tt-bar-fill.is-crit {
+  background: #dc2626;
+}
+
+/* Dark mode tooltip */
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip {
+  background-color: #18181b;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+  color: #f4f4f5;
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip .ag-tt-sec + .ag-tt-sec {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip .ag-tt-hdr {
+  color: #fafafa;
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip .ag-tt-badge {
+  background: rgba(255, 255, 255, 0.09);
+  color: #a1a1aa;
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip .ag-tt-lbl,
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip .ag-tt-sub {
+  color: #a1a1aa;
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip .ag-tt-val {
+  color: #f4f4f5;
+}
+
+:is(body.dark, html.dark, [data-theme="dark"]) #ag-lm-tooltip .ag-tt-bar-wrap {
+  background: rgba(255, 255, 255, 0.1);
+}

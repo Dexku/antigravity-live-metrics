@@ -1,0 +1,32 @@
+{
+  "name": "antigravity-live-metrics",
+  "version": "1.0.0",
+  "description": "Lightweight live token speed, TTFT/Hold, and context usage metrics pill + multi-language tooltip for Google Antigravity",
+  "type": "module",
+  "bin": {
+    "antigravity-live-metrics": "./bin/cli.mjs"
+  },
+  "scripts": {
+    "install-daemon": "node ./bin/cli.mjs install",
+    "uninstall-daemon": "node ./bin/cli.mjs uninstall",
+    "verify": "node ./bin/cli.mjs verify",
+    "doctor": "node ./bin/cli.mjs doctor"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "keywords": [
+    "antigravity",
+    "metrics",
+    "tokens",
+    "ttft",
+    "context-window",
+    "cdp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Dexku/antigravity-live-metrics.git"
+  },
+  "homepage": "https://github.com/Dexku/antigravity-live-metrics#readme",
+  "license": "MIT"
+}
