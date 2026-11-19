@@ -17,8 +17,8 @@
   --lm-amber-dark: #fbbf24;
   --lm-teal-light: #0d9488;
   --lm-teal-dark: #2dd4bf;
-  --lm-scroll-light: rgba(0, 0, 0, 0.2);
-  --lm-scroll-dark: rgba(255, 255, 255, 0.22);
+  --lm-scroll-light: #71717a;
+  --lm-scroll-dark: #8e8e98;
   --lm-pop-bg-light: #ffffff;
   --lm-pop-bg-dark: #202226;
 
@@ -72,7 +72,17 @@
   --lm-mono: var(--editor-font-family, "Google Sans Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 
   scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+:root.is-scrolling,
+.table-wrap.is-scrolling {
   scrollbar-color: var(--lm-scroll-thumb) transparent;
+}
+
+.table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
 :root[data-theme="light"] {
@@ -84,7 +94,8 @@
 }
 
 @supports not (scrollbar-color: auto) {
-  :root {
+  :root,
+  .table-wrap {
     scrollbar-width: auto;
   }
   ::-webkit-scrollbar {
@@ -92,8 +103,12 @@
     height: 8px;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--lm-scroll-thumb);
+    background: transparent;
     border-radius: 999px;
+  }
+  :root.is-scrolling::-webkit-scrollbar-thumb,
+  .table-wrap.is-scrolling::-webkit-scrollbar-thumb {
+    background: var(--lm-scroll-thumb);
   }
   ::-webkit-scrollbar-track {
     background: transparent;

@@ -2,6 +2,8 @@
 
 A native **Google Antigravity UI Plugin** (Sidecar Aux Pane) that displays real-time **token speed (`tok/s`)**, **latency (`TTFT` / `Stream`)**, **context window usage**, **cache hit efficiency**, and **recent call trends** for the active conversation—with zero CDP injection and full compatibility with **Antigravity `2.33.0+`**.
 
+![Antigravity Live Metrics Preview](assets/preview.jpg)
+
 ## What's New in v2.0
 
 Antigravity `2.33.0+` disabled default CDP remote debugging (`DevToolsActivePort` / `--remote-debugging-port`). Starting with **v2.0**, `antigravity-live-metrics` runs as an official **Antigravity Sidecar Web UI Plugin** (`SIDECAR_UI_ENTRYPOINT_AUX_PANE`) directly inside Antigravity's Auxiliary Pane—no external daemon, no CDP port, and resilient across app updates.

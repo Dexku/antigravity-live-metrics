@@ -59,6 +59,26 @@
     attributeFilter: ['style']
   });
 
+  // ---------- Auto-Hide Scrollbar When Idle ----------
+  function bindAutoHideScrollbar(target, classEl, delayMs = 900) {
+    let hideTimer = null;
+    const onScroll = () => {
+      if (!classEl.classList.contains('is-scrolling')) {
+        classEl.classList.add('is-scrolling');
+      }
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        classEl.classList.remove('is-scrolling');
+        hideTimer = null;
+      }, delayMs);
+    };
+    target.addEventListener('scroll', onScroll, { passive: true });
+  }
+
+  bindAutoHideScrollbar(window, document.documentElement);
+  const tableWrap = document.querySelector('.table-wrap');
+  if (tableWrap) bindAutoHideScrollbar(tableWrap, tableWrap);
+
   // ---------- Interest-Triggered Tooltips / Toggletips Wiring ----------
   const supportsInterest = 'interestForElement' in HTMLButtonElement.prototype;
   const ownedTriggers = new WeakSet();
