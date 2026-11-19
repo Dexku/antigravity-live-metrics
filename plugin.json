@@ -1,0 +1,7 @@
+{
+  "name": "live-metrics",
+  "displayName": "Live Metrics",
+  "description": "Real-time token speed (tok/s), latency (TTFT/Hold), context window usage, and cache hit statistics for the active Antigravity conversation.",
+  "version": "2.0.0",
+  "logo": "assets/logo.svg"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "live_metrics",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Antigravity Live Metrics native sidecar UI"
+}

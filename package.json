@@ -1,15 +1,14 @@
 {
   "name": "antigravity-live-metrics",
-  "version": "1.0.0",
-  "description": "Lightweight live token speed, TTFT/Hold, and context usage metrics pill + multi-language tooltip for Google Antigravity",
+  "version": "2.0.0",
+  "description": "Native Antigravity UI plugin (Sidecar Aux Pane) displaying live token speed (tok/s), latency (TTFT / Stream), context window usage, cache hit rate, and call history",
   "type": "module",
   "bin": {
     "antigravity-live-metrics": "./bin/cli.mjs"
   },
   "scripts": {
-    "install-daemon": "node ./bin/cli.mjs install",
-    "uninstall-daemon": "node ./bin/cli.mjs uninstall",
-    "verify": "node ./bin/cli.mjs verify",
+    "install-plugin": "node ./bin/cli.mjs install",
+    "uninstall-plugin": "node ./bin/cli.mjs uninstall",
     "doctor": "node ./bin/cli.mjs doctor"
   },
   "engines": {
@@ -17,11 +16,12 @@
   },
   "keywords": [
     "antigravity",
+    "plugin",
+    "sidecar",
     "metrics",
     "tokens",
     "ttft",
-    "context-window",
-    "cdp"
+    "context-window"
   ],
   "repository": {
     "type": "git",

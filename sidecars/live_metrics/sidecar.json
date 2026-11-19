@@ -1,0 +1,21 @@
+{
+  "command": "node",
+  "args": ["--disable-warning=ExperimentalWarning", "main.mjs"],
+  "restart_policy": "always",
+  "display_name": "Live Metrics",
+  "description": "Real-time token speed (tok/s), latency (TTFT / Stream), context window usage, and session cache statistics for the active conversation.",
+  "has_web_ui": true,
+  "agent_permissions": {
+    "allows_user_interactions": false
+  },
+  "ui_config": {
+    "display_name": "Live Metrics",
+    "views": [
+      {
+        "path": "/",
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE",
+        "title": "Live Metrics"
+      }
+    ]
+  }
+}

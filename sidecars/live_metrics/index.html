@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Live Metrics</title>
+  <script src="/preload.js"></script>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="panel">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 id="panel-title">Live Metrics</h1>
+        <span id="live-badge" class="live-badge" role="status">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span id="live-text">Live</span>
+        </span>
+        <span id="model-badge" class="model-badge hidden"></span>
+      </div>
+      <div id="lang-group" class="lang-group" role="group" aria-label="Language">
+        <button type="button" class="lang-btn" data-lang="auto" aria-pressed="true">Auto</button>
+        <button type="button" class="lang-btn" data-lang="en" aria-pressed="false">EN</button>
+        <button type="button" class="lang-btn" data-lang="zh-CN" aria-pressed="false">简中</button>
+        <button type="button" class="lang-btn" data-lang="zh-TW" aria-pressed="false">繁中</button>
+        <button type="button" class="lang-btn" data-lang="ja" aria-pressed="false">日本語</button>
+      </div>
+    </header>
+
+    <main id="content" class="content">
+      <section id="empty-state" class="empty-state" aria-live="polite">
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 13h4l2.5-7 3.5 11 2.5-6 2 2H21"/>
+          </svg>
+        </div>
+        <h2 id="empty-title">Waiting for metrics</h2>
+        <p id="empty-desc">Send a message in this conversation to see live token speed, latency, and context statistics.</p>
+      </section>
+
+      <div id="dashboard" class="dashboard hidden">
+        <!-- 4 KPI Cards -->
+        <section class="kpi-strip" aria-label="Key metrics">
+          <article class="card kpi-card">
+            <header>
+              <span id="kpi-speed-lbl" class="kpi-label">Speed</span>
+              <div class="kpi-head-right">
+                <span id="kpi-speed-mode" class="badge"></span>
+                <button type="button" class="tip-btn" id="btn-tip-speed" interestfor="tip-speed" popovertarget="tip-speed" popovertargetaction="show" aria-label="Speed details">i</button>
+                <div id="tip-speed" popover="hint" class="hint-popover"></div>
+              </div>
+            </header>
+            <p class="kpi-value"><span id="kpi-tps">0</span><span class="kpi-unit"> tok/s</span></p>
+            <p id="kpi-speed-sub" class="kpi-foot"></p>
+          </article>
+
+          <article class="card kpi-card">
+            <header>
+              <span id="kpi-lat-lbl" class="kpi-label">TTFT</span>
+              <div class="kpi-head-right">
+                <button type="button" class="tip-btn" id="btn-tip-lat" interestfor="tip-lat" popovertarget="tip-lat" popovertargetaction="show" aria-label="Latency details">i</button>
+                <div id="tip-lat" popover="hint" class="hint-popover"></div>
+              </div>
+            </header>
+            <p class="kpi-value"><span id="kpi-lat">0.0</span><span class="kpi-unit">s</span></p>
+            <p id="kpi-lat-sub" class="kpi-foot"></p>
+          </article>
+
+          <article class="card kpi-card">
+            <header>
+              <span id="kpi-ctx-lbl" class="kpi-label">Context</span>
+              <div class="kpi-head-right">
+                <button type="button" class="tip-btn" id="btn-tip-ctx" interestfor="tip-ctx" popovertarget="tip-ctx" popovertargetaction="show" aria-label="Context details">i</button>
+                <div id="tip-ctx" popover="hint" class="hint-popover"></div>
+              </div>
+            </header>
+            <p class="kpi-value"><span id="kpi-ctx-pct">0%</span></p>
+            <p id="kpi-ctx-sub" class="kpi-foot"></p>
+          </article>
+
+          <article class="card kpi-card">
+            <header>
+              <span id="kpi-cache-lbl" class="kpi-label">Cache Hit</span>
+              <div class="kpi-head-right">
+                <button type="button" class="tip-btn" id="btn-tip-cache" interestfor="tip-cache" popovertarget="tip-cache" popovertargetaction="show" aria-label="Cache details">i</button>
+                <div id="tip-cache" popover="hint" class="hint-popover"></div>
+              </div>
+            </header>
+            <p class="kpi-value"><span id="kpi-cache-pct">0%</span></p>
+            <p id="kpi-cache-sub" class="kpi-foot"></p>
+          </article>
+        </section>
+
+        <!-- 2-Column Balanced Breakdown -->
+        <section class="detail-grid" aria-label="Detailed breakdown">
+          <article class="card detail-card" aria-labelledby="latest-title">
+            <header>
+              <h2 id="latest-title">Latest Call</h2>
+              <span id="gen-badge" class="badge">Gen #0</span>
+            </header>
+            <div class="stack-blocks">
+              <div class="sub-block">
+                <div class="sub-head">
+                  <span id="lbl-latency" class="sub-title">Latency</span>
+                  <span id="val-lat-total" class="sub-strong"></span>
+                </div>
+                <div class="seg-bar" aria-hidden="true">
+                  <span id="bar-wait" class="seg seg-wait" style="width: 50%"></span>
+                  <span id="bar-stream" class="seg seg-stream" style="width: 50%"></span>
+                </div>
+                <div id="lat-legend" class="legend-row"></div>
+              </div>
+
+              <div class="sub-block">
+                <div class="sub-head">
+                  <span id="lbl-output" class="sub-title">Output</span>
+                  <span id="val-out-total" class="sub-strong"></span>
+                </div>
+                <div class="seg-bar" aria-hidden="true">
+                  <span id="bar-think" class="seg seg-think" style="width: 50%"></span>
+                  <span id="bar-resp" class="seg seg-resp" style="width: 50%"></span>
+                </div>
+                <div id="out-legend" class="legend-row"></div>
+              </div>
+            </div>
+            <footer id="latest-foot" class="card-foot"></footer>
+          </article>
+
+          <article class="card detail-card" aria-labelledby="session-title">
+            <header>
+              <h2 id="session-title">Session Total</h2>
+              <span id="turns-badge" class="badge">0 turns</span>
+            </header>
+            <div class="stack-blocks">
+              <div class="sub-block">
+                <div class="sub-head">
+                  <span id="ctx-win-lbl" class="sub-title">Context Window</span>
+                  <span id="ctx-win-val" class="sub-strong"></span>
+                </div>
+                <div class="bar-track" role="progressbar" id="ctx-bar-role" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div id="ctx-bar-cached" class="bar-seg bar-cached" style="width: 0%"></div>
+                  <div id="ctx-bar-new" class="bar-seg bar-new" style="width: 0%"></div>
+                </div>
+                <div id="ctx-legend" class="legend-row"></div>
+              </div>
+
+              <div id="session-tiles" class="stat-tiles"></div>
+            </div>
+            <footer id="session-foot" class="card-foot"></footer>
+          </article>
+        </section>
+
+        <!-- Recent Calls + Sparkline -->
+        <article id="recent-card" class="card hidden" aria-labelledby="recent-title">
+          <header>
+            <div class="recent-head-left">
+              <h2 id="recent-title">Recent Calls</h2>
+              <span id="recent-count" class="badge"></span>
+            </div>
+            <span id="spark-range" class="sub-muted"></span>
+          </header>
+
+          <div class="recent-body-stack">
+            <div class="spark-box">
+              <svg id="sparkline" class="sparkline" viewBox="0 0 360 40" preserveAspectRatio="none" aria-hidden="true"></svg>
+            </div>
+
+            <div class="table-wrap">
+              <table class="recent-table">
+                <thead>
+                  <tr>
+                    <th id="th-gen" scope="col">#</th>
+                    <th id="th-speed" scope="col">Speed</th>
+                    <th id="th-ttft" scope="col">TTFT</th>
+                    <th id="th-total" scope="col">Total</th>
+                    <th id="th-out" scope="col">Output</th>
+                    <th id="th-cache" scope="col">Cache</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+      </div>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

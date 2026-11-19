@@ -2,20 +2,20 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import http from 'node:http';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { hasSqliteSupport } from '../src/telemetry.mjs';
+import { hasSqliteSupport } from '../sidecars/live_metrics/telemetry.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = path.resolve(__dirname, '..');
-const DAEMON_PATH = path.join(PKG_ROOT, 'src', 'daemon.mjs');
-const DATA_DIR = path.join(os.homedir(), '.antigravity-live-metrics');
+const HOME = os.homedir();
+const DATA_DIR = path.join(HOME, '.antigravity-live-metrics');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
-const PID_FILE = path.join(DATA_DIR, 'daemon.pid');
-const LOG_FILE = path.join(DATA_DIR, 'daemon.log');
-const PLIST_LABEL = 'com.antigravity.live-metrics';
-const PLIST_PATH = path.join(os.homedir(), 'Library', 'LaunchAgents', `${PLIST_LABEL}.plist`);
+const LEGACY_PID_FILE = path.join(DATA_DIR, 'daemon.pid');
+const LEGACY_PLIST_LABEL = 'com.antigravity.live-metrics';
+const LEGACY_PLIST_PATH = path.join(HOME, 'Library', 'LaunchAgents', `${LEGACY_PLIST_LABEL}.plist`);
+const PLUGIN_DIR = path.join(HOME, '.gemini', 'config', 'plugins', 'live-metrics');
+const SIDECAR_LOG = path.join(HOME, '.gemini', 'antigravity', 'sidecar_data', 'live-metrics', 'live_metrics', 'logs', 'sidecar.log');
 
 const [cmd = 'help', ...rest] = process.argv.slice(2);
 
@@ -35,196 +35,86 @@ function ensureConfig(overrides = {}) {
   return next;
 }
 
-function getActivePort() {
-  const appData =
-    process.platform === 'win32'
-      ? process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')
-      : process.platform === 'darwin'
-        ? path.join(os.homedir(), 'Library', 'Application Support')
-        : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-
-  for (const name of ['Antigravity', 'Antigravity - Insiders']) {
-    const portFile = path.join(appData, name, 'DevToolsActivePort');
+function stopLegacyDaemon() {
+  let cleaned = false;
+  if (process.platform === 'darwin' && fs.existsSync(LEGACY_PLIST_PATH)) {
     try {
-      const p = Number(fs.readFileSync(portFile, 'utf8').trim().split(/\r?\n/)[0]);
-      if (Number.isInteger(p) && p > 0) return p;
+      execFileSync('launchctl', ['unload', LEGACY_PLIST_PATH], { stdio: 'ignore' });
     } catch {}
-  }
-  return 9222;
-}
-
-function fetchTargets(port) {
-  return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port, path: '/json/list', timeout: 1200 }, (res) => {
-      let body = '';
-      res.on('data', (c) => (body += c));
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(body));
-        } catch {
-          resolve([]);
-        }
-      });
-    });
-    req.on('error', () => resolve([]));
-    req.on('timeout', () => {
-      req.destroy();
-      resolve([]);
-    });
-  });
-}
-
-async function inspectLiveState() {
-  const port = getActivePort();
-  const targets = await fetchTargets(port);
-  const page = targets.find((t) => {
-    if (t.type !== 'page' || !t.webSocketDebuggerUrl || !t.url) return false;
-    const u = String(t.url);
-    return !u.startsWith('devtools://') && !u.startsWith('plugin:') && !u.startsWith('data:') && !u.startsWith('about:');
-  });
-  if (!page) return { reachable: false, port };
-
-  return new Promise((resolve) => {
-    const ws = new WebSocket(page.webSocketDebuggerUrl);
-    const timer = setTimeout(() => {
-      try {
-        ws.close();
-      } catch {}
-      resolve({ reachable: true, port, title: page.title, state: null });
-    }, 2000);
-
-    ws.addEventListener('open', () => {
-      ws.send(
-        JSON.stringify({
-          id: 1,
-          method: 'Runtime.evaluate',
-          params: {
-            expression: `JSON.stringify({
-              version: window.__ag_metrics_version || null,
-              hasStyle: !!document.getElementById('ag-lm-style'),
-              pillMounted: !!document.getElementById('ag-lm-pill'),
-              pillParentRight: !!(document.getElementById('ag-lm-pill') && document.getElementById('ag-lm-pill').parentElement && document.getElementById('ag-lm-pill').parentElement.nextElementSibling === null),
-              pillText: (document.getElementById('ag-lm-text') && document.getElementById('ag-lm-text').textContent) || null
-            })`,
-            returnByValue: true
-          }
-        })
-      );
-    });
-
-    ws.addEventListener('message', (evt) => {
-      try {
-        const msg = JSON.parse(String(evt.data));
-        if (msg.id === 1) {
-          clearTimeout(timer);
-          ws.close();
-          const state = msg.result?.result?.value ? JSON.parse(msg.result.result.value) : null;
-          resolve({ reachable: true, port, title: page.title, state });
-        }
-      } catch {}
-    });
-
-    ws.addEventListener('error', () => {
-      clearTimeout(timer);
-      resolve({ reachable: false, port });
-    });
-  });
-}
-
-function stopDaemon() {
-  if (process.platform === 'darwin') {
     try {
-      execFileSync('launchctl', ['unload', PLIST_PATH], { stdio: 'ignore' });
+      fs.unlinkSync(LEGACY_PLIST_PATH);
+      cleaned = true;
     } catch {}
   } else if (process.platform === 'win32') {
     try {
       execFileSync('schtasks', ['/delete', '/tn', 'AntigravityLiveMetrics', '/f'], { stdio: 'ignore' });
+      cleaned = true;
     } catch {}
+  } else if (process.platform === 'linux') {
+    const unitPath = path.join(HOME, '.config', 'systemd', 'user', 'antigravity-live-metrics.service');
+    if (fs.existsSync(unitPath)) {
+      try {
+        execFileSync('systemctl', ['--user', 'disable', '--now', 'antigravity-live-metrics.service'], { stdio: 'ignore' });
+      } catch {}
+      try {
+        fs.unlinkSync(unitPath);
+        cleaned = true;
+      } catch {}
+    }
   }
   try {
-    const pid = Number(fs.readFileSync(PID_FILE, 'utf8').trim());
-    if (pid > 0) process.kill(pid, 'SIGTERM');
+    const pid = Number(fs.readFileSync(LEGACY_PID_FILE, 'utf8').trim());
+    if (pid > 0) {
+      process.kill(pid, 'SIGTERM');
+      cleaned = true;
+    }
   } catch {}
   try {
-    fs.unlinkSync(PID_FILE);
+    if (fs.existsSync(LEGACY_PID_FILE)) fs.unlinkSync(LEGACY_PID_FILE);
   } catch {}
+  return cleaned;
 }
 
-function startService() {
-  const nodeBin = process.execPath;
-  if (process.platform === 'darwin') {
-    fs.mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${PLIST_LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${nodeBin}</string>
-    <string>--disable-warning=ExperimentalWarning</string>
-    <string>${DAEMON_PATH}</string>
-  </array>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>StandardOutPath</key>
-  <string>${LOG_FILE}</string>
-  <key>StandardErrorPath</key>
-  <string>${LOG_FILE}</string>
-</dict>
-</plist>
-`;
-    fs.writeFileSync(PLIST_PATH, plist, 'utf8');
-    try {
-      execFileSync('launchctl', ['unload', PLIST_PATH], { stdio: 'ignore' });
-    } catch {}
-    execFileSync('launchctl', ['load', '-w', PLIST_PATH], { stdio: 'inherit' });
-    return { platform: 'darwin', service: PLIST_PATH };
+function copyPluginFiles() {
+  fs.mkdirSync(path.join(PLUGIN_DIR, 'assets'), { recursive: true });
+  fs.mkdirSync(path.join(PLUGIN_DIR, 'sidecars', 'live_metrics'), { recursive: true });
+  fs.copyFileSync(path.join(PKG_ROOT, 'plugin.json'), path.join(PLUGIN_DIR, 'plugin.json'));
+  fs.copyFileSync(path.join(PKG_ROOT, 'assets', 'logo.svg'), path.join(PLUGIN_DIR, 'assets', 'logo.svg'));
+
+  const srcSidecar = path.join(PKG_ROOT, 'sidecars', 'live_metrics');
+  const dstSidecar = path.join(PLUGIN_DIR, 'sidecars', 'live_metrics');
+  for (const name of fs.readdirSync(srcSidecar)) {
+    const src = path.join(srcSidecar, name);
+    const dst = path.join(dstSidecar, name);
+    if (fs.statSync(src).isFile()) {
+      fs.copyFileSync(src, dst);
+    }
   }
-
-  if (process.platform === 'win32') {
-    const tr = `"${nodeBin}" --disable-warning=ExperimentalWarning "${DAEMON_PATH}"`;
-    execFileSync('schtasks', ['/create', '/tn', 'AntigravityLiveMetrics', '/sc', 'onlogon', '/tr', tr, '/f'], {
-      stdio: 'inherit'
-    });
-    return { platform: 'win32', service: 'schtasks:AntigravityLiveMetrics' };
-  }
-
-  const unitDir = path.join(os.homedir(), '.config', 'systemd', 'user');
-  fs.mkdirSync(unitDir, { recursive: true });
-  const unitPath = path.join(unitDir, 'antigravity-live-metrics.service');
-  const unit = `[Unit]
-Description=Antigravity Live Metrics Daemon
-After=default.target
-
-[Service]
-ExecStart=${nodeBin} --disable-warning=ExperimentalWarning ${DAEMON_PATH}
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-`;
-  fs.writeFileSync(unitPath, unit, 'utf8');
-  execFileSync('systemctl', ['--user', 'daemon-reload'], { stdio: 'ignore' });
-  execFileSync('systemctl', ['--user', 'enable', '--now', 'antigravity-live-metrics.service'], { stdio: 'inherit' });
-  return { platform: 'linux', service: unitPath };
 }
 
-async function run() {
-  if (cmd === 'doctor') {
-    const live = await inspectLiveState();
+function getLatestSidecarPort() {
+  try {
+    const log = fs.readFileSync(SIDECAR_LOG, 'utf8');
+    const matches = [...log.matchAll(/127\.0\.0\.1:(\d+)/g)];
+    return matches.length > 0 ? Number(matches[matches.length - 1][1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function run() {
+  if (cmd === 'install') {
+    const config = ensureConfig();
+    const legacyCleaned = stopLegacyDaemon();
+    copyPluginFiles();
     console.log(
       JSON.stringify(
         {
-          ok: hasSqliteSupport(),
-          nodeVersion: process.version,
-          sqliteSupported: hasSqliteSupport(),
+          ok: true,
+          pluginDir: PLUGIN_DIR,
           configPath: CONFIG_PATH,
-          live
+          config,
+          legacyDaemonRemoved: legacyCleaned
         },
         null,
         2
@@ -233,24 +123,32 @@ async function run() {
     return;
   }
 
-  if (cmd === 'install') {
-    const config = ensureConfig();
-    stopDaemon();
-    const service = startService();
-    spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', DAEMON_PATH, '--once'], {
-      stdio: 'inherit'
-    });
-    const live = await inspectLiveState();
-    console.log(JSON.stringify({ ok: true, config, service, live }, null, 2));
+  if (cmd === 'uninstall') {
+    const legacyCleaned = stopLegacyDaemon();
+    const existed = fs.existsSync(PLUGIN_DIR);
+    if (existed) {
+      fs.rmSync(PLUGIN_DIR, { recursive: true, force: true });
+    }
+    console.log(JSON.stringify({ ok: true, uninstalled: existed, legacyDaemonRemoved: legacyCleaned }, null, 2));
     return;
   }
 
-  if (cmd === 'verify') {
-    spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', DAEMON_PATH, '--once'], {
-      stdio: 'inherit'
-    });
-    const live = await inspectLiveState();
-    console.log(JSON.stringify({ ok: Boolean(live.state?.pillMounted), live }, null, 2));
+  if (cmd === 'doctor') {
+    console.log(
+      JSON.stringify(
+        {
+          ok: hasSqliteSupport() && fs.existsSync(path.join(PLUGIN_DIR, 'plugin.json')),
+          nodeVersion: process.version,
+          sqliteSupported: hasSqliteSupport(),
+          pluginInstalled: fs.existsSync(path.join(PLUGIN_DIR, 'plugin.json')),
+          pluginDir: PLUGIN_DIR,
+          configPath: CONFIG_PATH,
+          lastKnownSidecarPort: getLatestSidecarPort()
+        },
+        null,
+        2
+      )
+    );
     return;
   }
 
@@ -266,26 +164,13 @@ async function run() {
     return;
   }
 
-  if (cmd === 'uninstall') {
-    stopDaemon();
-    spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', DAEMON_PATH, '--uninstall'], {
-      stdio: 'inherit'
-    });
-    if (process.platform === 'darwin' && fs.existsSync(PLIST_PATH)) {
-      fs.unlinkSync(PLIST_PATH);
-    }
-    console.log(JSON.stringify({ ok: true, uninstalled: true }, null, 2));
-    return;
-  }
-
-  console.log(`antigravity-live-metrics CLI
+  console.log(`antigravity-live-metrics v2 CLI
 
 Usage:
-  node bin/cli.mjs install           Install and start the background metrics daemon
-  node bin/cli.mjs verify            Inject once and verify live status
-  node bin/cli.mjs doctor            Check Node.js SQLite support and live window
-  node bin/cli.mjs lang <locale>     Set tooltip language (auto | en | zh-CN | zh-TW | ja)
-  node bin/cli.mjs uninstall         Stop daemon and remove injected UI
+  node bin/cli.mjs install           Install native Antigravity UI plugin (and clean up legacy v1 daemon)
+  node bin/cli.mjs doctor            Check Node.js SQLite support and plugin installation status
+  node bin/cli.mjs lang <locale>     Set panel language (auto | en | zh-CN | zh-TW | ja)
+  node bin/cli.mjs uninstall         Remove plugin and stop any legacy v1 daemon
 `);
 }
 

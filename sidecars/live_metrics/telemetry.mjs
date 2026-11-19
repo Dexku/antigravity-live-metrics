@@ -14,6 +14,7 @@ try {
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const MAX_CACHE_ENTRIES = 64;
+const RECENT_CALLS_LIMIT = 14;
 
 const metricsCache = new Map();
 const incrementalMap = new Map();
@@ -85,6 +86,13 @@ export function parseProto(buf) {
   return out;
 }
 
+function readUtf8Field(map, fieldNum) {
+  const raw = map.get(fieldNum);
+  if (!(raw instanceof Uint8Array) || raw.length === 0 || raw.length > 160) return '';
+  const str = Buffer.from(raw).toString('utf8').trim();
+  return /^[\x20-\x7e]+$/.test(str) ? str : '';
+}
+
 function parseGenMetadataRow(row) {
   const top = parseProto(row.data);
   const chatRaw = top.get(1);
@@ -107,6 +115,7 @@ function parseGenMetadataRow(row) {
   const respTok = usage.get(10) || 0;
   const ttft = (ttftMap.get(1) || 0) + (ttftMap.get(2) || 0) / 1e9;
   const stream = (streamMap.get(1) || 0) + (streamMap.get(2) || 0) / 1e9;
+  const modelLabel = readUtf8Field(chat, 21) || readUtf8Field(chat, 19);
 
   return {
     idx: row.idx,
@@ -119,20 +128,46 @@ function parseGenMetadataRow(row) {
     respTok,
     ttft,
     stream,
-    totDur: ttft + stream
+    totDur: ttft + stream,
+    modelLabel
   };
 }
 
+function computeCallSpeed(item) {
+  const rawStreamTps = item.stream >= 0.5 ? item.outTok / item.stream : 0;
+  const e2eTps = item.totDur > 0 ? item.outTok / item.totDur : 0;
+  const streamRatio = item.totDur > 0 ? item.stream / item.totDur : 0;
+  const useStream =
+    rawStreamTps > 0 &&
+    rawStreamTps <= 600 &&
+    (streamRatio >= 0.15 || (item.stream >= 2.0 && rawStreamTps <= 250));
+  const displayTps = useStream ? rawStreamTps : e2eTps;
+  return { displayTps, useStream };
+}
+
 export function getCandidateConversationsDirs(channel = 'auto') {
-  const home = os.homedir();
   const dirs = [];
+  const dataDir = process.env.ANTIGRAVITY_EXECUTABLE_DATA_DIR;
+  if (dataDir) {
+    for (let d = dataDir; d !== path.dirname(d); d = path.dirname(d)) {
+      if (path.basename(d) !== 'sidecar_data') continue;
+      const appData = path.dirname(d);
+      const convDir = path.join(appData, 'conversations');
+      if (fs.existsSync(convDir)) dirs.push(convDir);
+      break;
+    }
+  }
+
+  const home = os.homedir();
   if (channel !== 'insiders') {
-    dirs.push(path.join(home, '.gemini', 'antigravity', 'conversations'));
+    const stable = path.join(home, '.gemini', 'antigravity', 'conversations');
+    if (!dirs.includes(stable) && fs.existsSync(stable)) dirs.push(stable);
   }
   if (channel !== 'stable') {
-    dirs.push(path.join(home, '.gemini', 'antigravity-insiders', 'conversations'));
+    const insiders = path.join(home, '.gemini', 'antigravity-insiders', 'conversations');
+    if (!dirs.includes(insiders) && fs.existsSync(insiders)) dirs.push(insiders);
   }
-  return dirs.filter((d) => fs.existsSync(d));
+  return dirs;
 }
 
 function getDbState(cascadeId, conversationsDirs) {
@@ -167,13 +202,15 @@ export function getDbSignature(cascadeId, conversationsDirs) {
 }
 
 export function parseConversationMetrics(cascadeId, conversationsDirs, config = {}) {
-  if (!DatabaseSync) return null;
+  if (!DatabaseSync) return { cascadeId, hasData: false, error: 'sqlite_missing' };
   const state = getDbState(cascadeId, conversationsDirs);
   if (!state) return { cascadeId, hasData: false };
 
   const { dbPath, sig } = state;
+  const cfgKey = `${config.contextLimit || 256000}:${config.contextLimitOverride || 0}`;
+  const cacheSig = `${sig}|${cfgKey}`;
   const cached = metricsCache.get(dbPath);
-  if (cached && cached.sig === sig) {
+  if (cached && cached.sig === cacheSig) {
     return cached.payload;
   }
 
@@ -188,8 +225,8 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
       db.close();
       db = null;
       incrementalMap.delete(dbPath);
-      const empty = { cascadeId, hasData: false, sig };
-      setBounded(metricsCache, dbPath, { sig, payload: empty });
+      const empty = { cascadeId, hasData: false };
+      setBounded(metricsCache, dbPath, { sig: cacheSig, payload: empty });
       return empty;
     }
 
@@ -225,6 +262,8 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
         inc.totalOut -= popped.outTok;
         inc.totalThink -= popped.thinkTok;
         inc.totalResp -= popped.respTok;
+        inc.totalTtft -= popped.ttft;
+        inc.totalStream -= popped.stream;
       }
       while (inc.validItems.length > 0 && inc.validItems[inc.validItems.length - 1].idx >= startIdx) {
         inc.validItems.pop();
@@ -238,6 +277,8 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
           inc.totalOut += p.outTok;
           inc.totalThink += p.thinkTok;
           inc.totalResp += p.respTok;
+          inc.totalTtft += p.ttft;
+          inc.totalStream += p.stream;
           if (p.ctx > 0 || p.outTok > 0) inc.validItems.push(p);
         }
         inc.rowCount = rowCount;
@@ -258,6 +299,8 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
       let totalOut = 0;
       let totalThink = 0;
       let totalResp = 0;
+      let totalTtft = 0;
+      let totalStream = 0;
       for (const row of rows) {
         const p = parseGenMetadataRow(row);
         items.push(p);
@@ -266,6 +309,8 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
         totalOut += p.outTok;
         totalThink += p.thinkTok;
         totalResp += p.respTok;
+        totalTtft += p.ttft;
+        totalStream += p.stream;
         if (p.ctx > 0 || p.outTok > 0) validItems.push(p);
       }
       inc = {
@@ -279,7 +324,9 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
         totalCache,
         totalOut,
         totalThink,
-        totalResp
+        totalResp,
+        totalTtft,
+        totalStream
       };
     }
 
@@ -287,10 +334,10 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
     db = null;
     setBounded(incrementalMap, dbPath, inc);
 
-    const { validItems: valid, totalIn, totalCache, totalOut, totalThink, totalResp } = inc;
+    const { validItems: valid, totalIn, totalCache, totalOut, totalThink, totalResp, totalTtft, totalStream } = inc;
     if (valid.length === 0) {
-      const empty = { cascadeId, hasData: false, sig };
-      setBounded(metricsCache, dbPath, { sig, payload: empty });
+      const empty = { cascadeId, hasData: false };
+      setBounded(metricsCache, dbPath, { sig: cacheSig, payload: empty });
       return empty;
     }
 
@@ -307,6 +354,23 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
       turnDur += item.totDur;
     }
 
+    // Session speed summary (average & peak across valid calls)
+    let speedSum = 0;
+    let speedCount = 0;
+    let peakTps = 0;
+    let ttftSum = 0;
+    for (const item of valid) {
+      const sp = computeCallSpeed(item);
+      if (sp.displayTps > 0) {
+        speedSum += sp.displayTps;
+        speedCount++;
+        if (sp.displayTps > peakTps) peakTps = sp.displayTps;
+      }
+      ttftSum += item.ttft;
+    }
+    const avgTps = speedCount > 0 ? speedSum / speedCount : 0;
+    const avgTtft = valid.length > 0 ? ttftSum / valid.length : 0;
+
     const last = valid[valid.length - 1];
     const fallbackLimit = Number(config.contextLimit) > 0 ? Number(config.contextLimit) : 256000;
     const contextLimit =
@@ -316,20 +380,36 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
           ? last.maxCtx
           : fallbackLimit;
 
-    const rawStreamTps = last.stream >= 0.5 ? last.outTok / last.stream : 0;
-    const e2eTps = last.totDur > 0 ? last.outTok / last.totDur : 0;
-    const streamRatio = last.totDur > 0 ? last.stream / last.totDur : 0;
-    const useStream =
-      rawStreamTps > 0 &&
-      rawStreamTps <= 600 &&
-      (streamRatio >= 0.15 || (last.stream >= 2.0 && rawStreamTps <= 250));
-    const displayTps = useStream ? rawStreamTps : e2eTps;
+    const { displayTps, useStream } = computeCallSpeed(last);
     const ctxPct = Math.round((last.ctx / contextLimit) * 100);
+
+    const startRecent = Math.max(0, valid.length - RECENT_CALLS_LIMIT);
+    const recentCalls = [];
+    for (let i = valid.length - 1; i >= startRecent; i--) {
+      const item = valid[i];
+      const sp = computeCallSpeed(item);
+      recentCalls.push({
+        gen: i + 1,
+        model: item.modelLabel || '',
+        tps: Number(sp.displayTps.toFixed(1)),
+        isEndToEnd: !sp.useStream,
+        ttft: Number(item.ttft.toFixed(2)),
+        stream: Number(item.stream.toFixed(2)),
+        total: Number(item.totDur.toFixed(2)),
+        ctx: item.ctx,
+        newTok: item.inTok,
+        cached: item.cacheRead,
+        outTok: item.outTok,
+        thinkTok: item.thinkTok,
+        respTok: item.respTok,
+        cachePct: item.ctx > 0 ? Number(((item.cacheRead / item.ctx) * 100).toFixed(1)) : 0
+      });
+    }
 
     const payload = {
       cascadeId,
       hasData: true,
-      sig,
+      model: last.modelLabel || '',
       inline: {
         tps: Math.round(displayTps),
         latencyType: useStream ? 'ttft' : 'hold',
@@ -341,12 +421,15 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
         genCount: valid.length,
         speed: {
           tps: Number(displayTps.toFixed(1)),
+          avgTps: Number(avgTps.toFixed(1)),
+          peakTps: Number(peakTps.toFixed(1)),
           isEndToEnd: !useStream
         },
         latency: {
           ttft: Number(last.ttft.toFixed(2)),
           stream: Number(last.stream.toFixed(2)),
-          total: Number(last.totDur.toFixed(2))
+          total: Number(last.totDur.toFixed(2)),
+          avgTtft: Number(avgTtft.toFixed(2))
         },
         context: {
           total: last.ctx,
@@ -378,15 +461,19 @@ export function parseConversationMetrics(cascadeId, conversationsDirs, config = 
           cacheHitPct: totalIn + totalCache > 0 ? Number(((totalCache / (totalIn + totalCache)) * 100).toFixed(1)) : 0,
           totalOut,
           totalThink,
-          totalResp
+          totalResp,
+          totalTtft: Number(totalTtft.toFixed(1)),
+          totalStream: Number(totalStream.toFixed(1)),
+          totalDuration: Number((totalTtft + totalStream).toFixed(1))
         }
-      }
+      },
+      recentCalls
     };
 
-    setBounded(metricsCache, dbPath, { sig, payload });
+    setBounded(metricsCache, dbPath, { sig: cacheSig, payload });
     return payload;
   } catch {
-    return null;
+    return { cascadeId, hasData: false };
   } finally {
     if (db) {
       try {
